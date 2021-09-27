@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.0;
 import "@chainlink/contracts/src/v0.8/VRFConsumerBase.sol";
 
@@ -25,7 +26,6 @@ contract RandomNumberConsumer is VRFConsumerBase {
     }
 
     function fulfillRandomness(bytes32 requestId, uint256 randomness) external override {
-        require(msg.sender == vrfCoordinator, "Fulillment only permitted by Coordinator");
         randomNumber = randomness;
         lottery_interface(governance.lottery()).fulfill_random(randomness);
     }

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.0;
 import "@chainlink/contracts/src/v0.8/ChainlinkClient.sol";
 
@@ -10,7 +11,6 @@ contract Lottery is ChainlinkClient {
     enum LOTTERY_STATE { OPEN, CLOSED, CALCULATING_WINNER }
     LOTTERY_STATE public lottery_state;
     uint128 public lotteryId;
-    uint8 internal winningRatio = 0.9;
 
     address payable[] public players;
     mapping(address => uint8) bets;
@@ -43,7 +43,7 @@ contract Lottery is ChainlinkClient {
         require(bet > 0, "Bet can not be zero");
         assert(lottery_state == LOTTERY_STATE.OPEN);
 
-        players.push(msg.sender);
+        players.push(payable(msg.sender));
         bets[msg.sender] = bet;
 
         emit LotteryPotUpdate(address(this).balance);
@@ -54,7 +54,7 @@ contract Lottery is ChainlinkClient {
         lottery_state = LOTTERY_STATE.OPEN;
 
         Chainlink.Request memory req = buildChainlinkRequest(CHAINLINK_ALARM_JOB_ID, address(this), this.fulfill_alarm.selector);
-        req.addUint("until", now + duration);
+        req.addUint("until", block.timestamp + duration);
         sendChainlinkRequestTo(CHAINLINK_ALARM_ORACLE, req, ORACLE_PAYMENT);
 
         emit LotteryStart();
@@ -96,8 +96,8 @@ contract Lottery is ChainlinkClient {
             emit LotteryClose();
         } else {
             // transfer winning amount to winner and commission to contract owner
-            winner.transfer(address(this).balance * winningRatio);
-            owner.transfer(address (this).balance * (1 - winningRatio));
+            winner.transfer((address(this).balance * 9) / 10);
+            owner.transfer(address (this).balance / 10);
 
             emit LotteryWin(winner);
         }
