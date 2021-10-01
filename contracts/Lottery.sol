@@ -61,7 +61,9 @@ contract Lottery is Ownable {
         lottery_state = LOTTERY_STATE.CLOSED;
         emit LotteryClose();
 
-        pickWinner();
+        if(players.length > 0) {
+            pickWinner();
+        }
     }
 
     function pickWinner() private {
