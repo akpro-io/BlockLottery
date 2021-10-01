@@ -89,8 +89,4 @@ contract Lottery is Ownable {
 
         emit LotteryWin(winner);
     }
-
-    function get_random_number() public view returns (uint256) {
-        return oracle.getRandomNumber();
-    }
 }
