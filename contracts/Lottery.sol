@@ -1,117 +1,96 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.0;
-import "@chainlink/contracts/src/v0.8/ChainlinkClient.sol";
+import "@openzeppelin/contracts/access/Ownable.sol";
 
-import { randomn_number_consumer_interface } from "./interfaces/randomn_number_consumer_interface.sol";
-import { governance_interface } from "./interfaces/governance_interface.sol";
+contract Oracle {
+    function getRandomNumber() external view returns (uint256) {
+        return uint(keccak256(abi.encodePacked(block.difficulty, block.timestamp)));
+    }
+}
 
-contract Lottery is ChainlinkClient {
-    address owner;
-
-    enum LOTTERY_STATE { OPEN, CLOSED, CALCULATING_WINNER }
+contract Lottery is Ownable {
+    Oracle private oracle;
+    enum LOTTERY_STATE { CLOSED, OPEN, CALCULATING_WINNER }
     LOTTERY_STATE public lottery_state;
-    uint128 public lotteryId;
+    uint256 public lottery_duration = 300000; // time in ms. Can be used by FE for clock purposes.
 
     address payable[] public players;
-    mapping(address => uint8) bets;
-    governance_interface public governance;
+    mapping(address => uint256) bets;
 
-    // .01 ETH minimum for place a bet
     uint256 public MINIMUM = 1000000000000000;
-    // 0.1 LINK to place requests with oracle
-    uint256 public ORACLE_PAYMENT = 100000000000000000;
 
-    address CHAINLINK_ALARM_ORACLE = 0xc99B3D447826532722E41bc36e644ba3479E4365;
-    bytes32 CHAINLINK_ALARM_JOB_ID = "2ebb1c1a4b1e4229adac24ee0b5f784f";
-
-    event LotteryStart();
-    event LotteryWin(address indexed _winner);
-    event LotteryClose();
+    event LotteryStart(uint256 _duration);
     event LotteryPotUpdate(uint256 _amount);
+    event LotteryClose();
+    event LotteryWin(address indexed _winner);
 
-    constructor(address _governance) public {
-        setPublicChainlinkToken();
+    modifier atStage(LOTTERY_STATE _state) {
+        require(_state == lottery_state, "Can not be called at this time.");
+        _;
+    }
 
-        owner = msg.sender;
-        lotteryId = 1;
+    modifier atMinimumValue() {
+        require(msg.value >= MINIMUM, "Need minimum 0.01ETH.");
+        _;
+    }
+
+    constructor() {
         lottery_state = LOTTERY_STATE.CLOSED;
-        governance = governance_interface(_governance);
+        oracle = new Oracle();
     }
 
-    function enter(uint8 bet) public payable {
-        require(msg.value == MINIMUM);
-        require(bet > 0, "Bet can not be zero");
-        assert(lottery_state == LOTTERY_STATE.OPEN);
-
-        players.push(payable(msg.sender));
-        bets[msg.sender] = bet;
-
-        emit LotteryPotUpdate(address(this).balance);
-    }
-
-    function start_new_lottery(uint256 duration) public {
-        require(lottery_state == LOTTERY_STATE.CLOSED, "Can not start a new lottery yet");
+    // starting the lottery here
+    function start_lottery() public onlyOwner atStage(LOTTERY_STATE.CLOSED) {
         lottery_state = LOTTERY_STATE.OPEN;
-
-        Chainlink.Request memory req = buildChainlinkRequest(CHAINLINK_ALARM_JOB_ID, address(this), this.fulfill_alarm.selector);
-        req.addUint("until", block.timestamp + duration);
-        sendChainlinkRequestTo(CHAINLINK_ALARM_ORACLE, req, ORACLE_PAYMENT);
-
-        emit LotteryStart();
+        emit LotteryStart(lottery_duration);
     }
 
-    function fulfill_alarm(bytes32 _requestId) public recordChainlinkFulfillment(_requestId) {
-        require(lottery_state == LOTTERY_STATE.OPEN, "Lottery isn't started yet!");
+    // get the current pot amount
+    function get_pot() public view returns(uint256) {
+        return address(this).balance;
+    }
 
-        lottery_state = LOTTERY_STATE.CALCULATING_WINNER;
+    function enter(uint256 _bet) public payable atMinimumValue atStage(LOTTERY_STATE.OPEN) {
+        players.push(payable(msg.sender));
+        bets[msg.sender] = _bet;
+
+        emit LotteryPotUpdate(get_pot());
+    }
+
+    function close_lottery() public onlyOwner atStage(LOTTERY_STATE.OPEN) {
+        lottery_state = LOTTERY_STATE.CLOSED;
+        emit LotteryClose();
+
         pickWinner();
     }
 
     function pickWinner() private {
-        require(lottery_state == LOTTERY_STATE.CALCULATING_WINNER, "We are not picking the winner yet.");
-        randomn_number_consumer_interface(governance.randomness()).getRandom(lotteryId);
-    }
+        uint randomNumber = oracle.getRandomNumber();
+        uint256 totalPlayers = players.length;
 
-    function fulfill_random(uint256 randomness) external {
-        require(lottery_state == LOTTERY_STATE.CALCULATING_WINNER, "We are not picking the winner yet.");
-        assert(randomness > 0, "Random not found");
-        assert(msg.sender == governance.randomness());
+        uint winningBet = randomNumber % totalPlayers;
+        address payable winner;
 
-        uint8 playersLen = players.length;
-        uint256 winningBet = randomness % playersLen;
-        address winner = address(0);
+        uint256 ii = 0;
 
-        for (uint ii = 0; ii < playersLen; ii++) {
+        for(ii = 0; ii < totalPlayers; ii++) {
             if(bets[players[ii]] == winningBet) {
                 winner = players[ii];
                 break;
             }
         }
 
-        assert(winner != address(0), "No winner found.");
-
         if(winner == address(0)) {
-            owner.transfer(address(this).balance);
-
-            emit LotteryClose();
+            // payable(owner).transfer(address(this).balance);
         } else {
-            // transfer winning amount to winner and commission to contract owner
             winner.transfer((address(this).balance * 9) / 10);
-            owner.transfer(address (this).balance / 10);
-
-            emit LotteryWin(winner);
+            // owner.transfer(address(this).balance / 10);
         }
 
-        // close the lottery
-        lottery_state = LOTTERY_STATE.CLOSED;
-
-        // restart the lottery if there is sufficient LINK balance in the contract
-        /*if(LINK.balanceOf(this) > 2 * ORACLE_PAYMENT) {
-            start_new_lottery();
-        }*/
+        emit LotteryWin(winner);
     }
 
-    function get_pot() public view returns(uint256) {
-        return address(this).balance;
+    function get_random_number() public view returns (uint256) {
+        return oracle.getRandomNumber();
     }
 }
