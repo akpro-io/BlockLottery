@@ -44,6 +44,7 @@ contract Lottery is Ownable {
     function start_lottery() public onlyOwner atStage(LOTTERY_STATE.CLOSED) {
         lottery_state = LOTTERY_STATE.OPEN;
         last_started_at = block.timestamp;
+        delete players;
         emit LotteryStart(lottery_duration);
     }
 
@@ -92,5 +93,9 @@ contract Lottery is Ownable {
         }
 
         emit LotteryWin(winner);
+    }
+
+    function getPlayers() public view returns(address payable[] memory) {
+        return players;
     }
 }
