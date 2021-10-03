@@ -13,6 +13,7 @@ contract Lottery is Ownable {
     enum LOTTERY_STATE { CLOSED, OPEN, CALCULATING_WINNER }
     LOTTERY_STATE public lottery_state;
     uint256 public lottery_duration = 300000; // time in ms. Can be used by FE for clock purposes.
+    uint256 public last_started_at;
 
     address payable[] public players;
     mapping(address => uint256) bets;
@@ -42,6 +43,7 @@ contract Lottery is Ownable {
     // starting the lottery here
     function start_lottery() public onlyOwner atStage(LOTTERY_STATE.CLOSED) {
         lottery_state = LOTTERY_STATE.OPEN;
+        last_started_at = block.timestamp;
         emit LotteryStart(lottery_duration);
     }
 
